@@ -57,8 +57,8 @@ async function indexSignaturesForAddress(
         firstFlag = false;
       }
 
-      // Logging the bottom (oldest tx) to the top (most recent tx) of the current run
-      console.log(
+      // infoging the bottom (oldest tx) to the top (most recent tx) of the current run
+      console.info(
         `Indexed [${sigs.length}] txs: ${sigs[0].signature} (${new Date(
           sigs[0].blockTime * 1000
         ).toISOString()}) - ${sigs[sigs.length - 1].signature} (${new Date(
@@ -124,17 +124,17 @@ export const refreshConnection = async () => {
 
 const main = async () => {
   if (DEBUG_MODE) {
-    console.log("Running in debug mode, will not push to AWS buckets");
+    console.info("Running in debug mode, will not push to AWS buckets");
   }
 
   // Periodic refresh of rpc connection to prevent hangups
   setInterval(async () => {
-    console.log("%cRefreshing rpc connection", "color: cyan");
+    console.info("%cRefreshing rpc connection", "color: cyan");
     refreshConnection();
   }, 1000 * 60 * 5); // Refresh every 5 minutes
 
   if (process.env.RESET === "true") {
-    console.log("Resetting checkpoints...");
+    console.info("Resetting checkpoints...");
     writeFrontfillCheckpoint(
       process.env.CHECKPOINT_TABLE_NAME,
       undefined,
@@ -153,12 +153,12 @@ const main = async () => {
     let { incomplete_top, bottom, backfill_complete } = await readBackfillCheckpoint(
       process.env.CHECKPOINT_TABLE_NAME
     );
-    console.log(`Incomplete Top: ${incomplete_top}, Bottom: ${bottom}, Backfill Complete: ${backfill_complete}`);
+    console.info(`Incomplete Top: ${incomplete_top}, Bottom: ${bottom}, Backfill Complete: ${backfill_complete}`);
     let top = incomplete_top;
 
     if (process.env.FRONTFILL_ONLY === "true") {
       // Frontfill only mode
-      console.log("Running in frontfill only mode...");
+      console.info("Running in frontfill only mode...");
       backfill_complete = true;
     }
 
@@ -179,7 +179,7 @@ const main = async () => {
         writeBackfillCheckpoint( process.env.CHECKPOINT_TABLE_NAME, incomplete_top, bottom, false);
       } else {
           // ...and indexing from the front to the old top
-          console.log(`Frontfilling: Indexing up until: ${old_top}`);
+          console.info(`Frontfilling: Indexing up until: ${old_top}`);
 
           ({ bottom, top } = await indexSignaturesForAddress(
             new PublicKey(process.env.PROGRAM_ID),
@@ -190,7 +190,7 @@ const main = async () => {
       }
     } else {
       // Backfill
-      console.log(`No prior data, proceeding to backfill. Starting at: ${incomplete_top}`);
+      console.info(`No prior data, proceeding to backfill. Starting at: ${incomplete_top}`);
       
       ({ bottom, top } = await indexSignaturesForAddress(
         new PublicKey(process.env.PROGRAM_ID),
@@ -200,7 +200,7 @@ const main = async () => {
       ));
     }
 
-    console.log("Indexing up to date, waiting a few seconds...");
+    console.info("Indexing up to date, waiting a few seconds...");
     await sleep(10000); // 10 seconds
   }
 };

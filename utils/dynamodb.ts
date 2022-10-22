@@ -30,7 +30,7 @@ export const writeBackfillCheckpoint = (
       if (err) {
         console.error("Error", err);
       } else {
-        console.log("Backfill Checkpoint successfully written.");
+        console.info("Backfill Checkpoint successfully written.");
       }
     });
   };
@@ -59,8 +59,8 @@ export const readBackfillCheckpoint = async (tableName: string) => {
       if (bottom == "") {
         bottom = undefined;
       }
-      console.log(`Read checkpoint: ${incomplete_top}, ${bottom}`);
-      console.log(`Backfill complete: ${backfill_complete}`);
+      console.info(`Read checkpoint: ${incomplete_top}, ${bottom}`);
+      console.info(`Backfill complete: ${backfill_complete}`);
       return {
         incomplete_top,
         bottom,
@@ -96,7 +96,7 @@ export const writeFrontfillCheckpoint = (
       if (err) {
         console.error("Error", err);
       } else {
-        console.log("Frontfill Checkpoint successfully written.");
+        console.info("Frontfill Checkpoint successfully written.");
       }
     });
   };
@@ -120,7 +120,7 @@ export const readFrontfillCheckpoint = async (tableName: string) => {
       if (old_top == "") {
         old_top = undefined;
       }
-      console.log(`Read checkpoint: ${old_top}`);
+      console.info(`Read checkpoint: ${old_top}`);
       return {
         old_top,
       };
