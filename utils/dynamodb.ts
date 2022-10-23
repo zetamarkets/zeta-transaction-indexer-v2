@@ -28,7 +28,7 @@ export const writeBackfillCheckpoint = (
     // Call DynamoDB to add the item to the table
     ddb.putItem(params, function (err, data) {
       if (err) {
-        console.error("[ERROR] Error", err);
+        console.error("[ERROR] Backfill Checkpoint Write Error", err);
       } else {
         console.info("[INFO] Backfill Checkpoint successfully written.");
       }
@@ -59,15 +59,14 @@ export const readBackfillCheckpoint = async (tableName: string) => {
       if (bottom_sig == "") {
         bottom_sig = undefined;
       }
-      console.info(`[INFO] Read checkpoint: ${incomplete_top}, ${bottom_sig}`);
-      console.info(`[INFO] Backfill complete: ${backfill_complete}`);
+      console.info(`[INFO] Reading Backfill checkpoint - Incomplete Top: ${incomplete_top}, Bottom Sig: ${bottom_sig}, Backfill complete: ${backfill_complete}`);
       return {
         incomplete_top,
         bottom_sig,
         backfill_complete,
       };
     } else {
-      console.warn(`[WARN] No checkpoint found`);
+      console.warn(`[WARN] No Backfill Checkpoint Found`);
       return { incomplete_top: undefined, bottom_sig: undefined, backfill_complete: false };
     }
   } catch (error) {
@@ -104,7 +103,7 @@ export const writeFrontfillCheckpoint = (
     // Call DynamoDB to add the item to the table
     ddb.putItem(params, function (err, data) {
       if (err) {
-        console.error("[ERROR] Error", err);
+        console.error("[ERROR] Frontfill Checkpoint Write Error", err);
       } else {
         console.info("[INFO] Frontfill Checkpoint successfully written.");
       }
@@ -138,10 +137,10 @@ export const readFrontfillCheckpoint = async (tableName: string) => {
       if (old_top_slot === 0) {
         old_top_slot = undefined;
       }
-      console.info(`[INFO] Read checkpoint - Signature: ${old_top}, BlockTime: ${old_top_block_time}, Slot: ${old_top_slot}`);
+      console.info(`[INFO] Reading Frontfill checkpoint - Signature: ${old_top}, BlockTime: ${old_top_block_time}, Slot: ${old_top_slot}`);
       return { old_top, old_top_block_time, old_top_slot };
     } else {
-      console.warn(`[WARN] No checkpoint found`);
+      console.warn(`[WARN] No Frontfill Checkpoint Found`);
       return { old_top: undefined, old_top_block_time: undefined, old_top_slot: undefined };
     }
   } catch (error) {
