@@ -1,9 +1,16 @@
 import { Kind } from "@zetamarkets/sdk/dist/types";
+import { TransactionSignature } from "@solana/web3.js";
 
 export interface EventQueueHeader {
   head: number;
   count: number;
   seqNum: number;
+}
+
+export interface ConfirmedSignatureInfoShort {
+  signature: TransactionSignature | undefined;
+  blockTime: number | undefined;
+  slot: number | undefined;
 }
 
 export interface Trade {
