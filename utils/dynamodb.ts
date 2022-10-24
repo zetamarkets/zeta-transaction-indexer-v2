@@ -51,7 +51,7 @@ export const readBackfillCheckpoint = async (tableName: string) => {
     const r = await q.promise();
     if (r.Item) {
       let incomplete_top = r.Item.incomplete_top.S;
-      let bottom_sig = r.Item.bottom.S;
+      let bottom_sig = r.Item.bottom_sig.S;
       let backfill_complete = r.Item.backfill_complete.BOOL;
       if (incomplete_top == "") {
         incomplete_top = undefined;
