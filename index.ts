@@ -13,10 +13,8 @@ import {
   readBackfillCheckpoint,
   writeFrontfillCheckpoint,
   writeBackfillCheckpoint,
-  // readSignatureCheckpoint,
-  // writeSignatureCheckpoint,
 } from "./utils/dynamodb";
-
+import { ConfirmedSignatureInfoShort } from "./utils/types";
 
 let rpc = new SolanaRPC(
   process.env.RPC_URL_1,
@@ -30,26 +28,120 @@ async function indexSignaturesForAddress(
   before?: TransactionSignature,
   until?: TransactionSignature,
   backfill_complete?: boolean,
+  old_top_block_time?: number,
+  old_top_slot?: number,
 ) {
   let sigs: ConfirmedSignatureInfo[];
-  let top = before;
-  let bottom = until;
+  let top: ConfirmedSignatureInfoShort = {
+    signature: before,
+    blockTime: undefined,
+    slot: undefined,
+  };
+  let bottom: ConfirmedSignatureInfoShort = {
+    signature: until,
+    blockTime: old_top_block_time,
+    slot: old_top_slot,
+  };
   let firstFlag = true;
-  let newTop = undefined;
+  let newTop: ConfirmedSignatureInfoShort;
+  let prev_bottom: ConfirmedSignatureInfoShort = {
+    signature: undefined,
+    blockTime: undefined,
+    slot: undefined,
+  };
+  let simultaneousBottoms = new Object();
+  simultaneousBottoms["blockTime"] = undefined;
+  simultaneousBottoms["slot"] = undefined;
   do {
     sigs = await rpc.getSignaturesForAddressWithRetries(address, {
-      before: top,
-      until: bottom,
+      before: top.signature,
+      until: bottom.signature,
       limit: 1000,
     });
     sigs.reverse();
 
+    // If we are frontfilling need to check for same blocktimed txs from the bottom
+    if (sigs.length > 0 && backfill_complete) {
+      // Settign temp bottom (since its possible they are removed from the list)
+      let temp_bottom = {
+        signature: sigs[0].signature,
+        blockTime: sigs[0].blockTime,
+        slot: sigs[0].slot,
+      };
+
+      // Checking if the bottom of the current run matches the blocktime and slot of the final bottom (until)
+      console.info(`[INFO] Previous Bottom: ${prev_bottom.signature}, Blocktime: ${prev_bottom.blockTime}, Slot: ${prev_bottom.slot}`);
+      console.info(`[INFO] Current Bottom : ${temp_bottom.signature}, Blocktime: ${temp_bottom.blockTime}, Slot: ${temp_bottom.slot}`);
+      console.info(`[INFO] Final Bottom   : ${until}, Blocktime: ${old_top_block_time}, Slot: ${old_top_slot}`);
+      
+      // Checking for the case where the last two+ txs have the same blocktime and slot
+      let checkFlag = false;
+      if (sigs.length > 1) {
+        if (temp_bottom.blockTime == sigs[1].blockTime && temp_bottom.slot == sigs[1].slot) {
+          console.info(`[INFO] Check Flag: True`);
+          checkFlag = true;
+        }
+      }
+
+      // If the bottom of the current run matches the blocktime and slot of the final bottom (until)
+      if ((temp_bottom.blockTime === old_top_block_time && temp_bottom.slot === old_top_slot) || (temp_bottom.blockTime === prev_bottom.blockTime && temp_bottom.slot === prev_bottom.slot) || (checkFlag)) {
+        console.info("[INFO] Found bottom of frontfill with MATCHING blocktime and slot!");
+        let simultaneousBottomIndexes = [];
+        if ((temp_bottom.blockTime != simultaneousBottoms["blockTime"] && temp_bottom.slot != simultaneousBottoms["slot"]) && (temp_bottom.blockTime != old_top_block_time && temp_bottom.slot != old_top_slot)) {
+          // If the recent bottom isnt the same as the previous bottom or the final bottom we can reset the simultaneousBottoms
+          console.info('[INFO] Resetting simultaneousBottoms');
+          simultaneousBottoms = new Object();
+          simultaneousBottoms["blockTime"] = temp_bottom.blockTime;
+          simultaneousBottoms["slot"] = temp_bottom.slot;
+        }
+
+        for (var i = 0; i < sigs.length; i += 1) {
+          // Checking from the bottom upwards which txs are the exact same blocktime and slot
+          if (sigs[i].blockTime === old_top_block_time && sigs[i].slot === old_top_slot || sigs[i].blockTime === prev_bottom.blockTime && sigs[i].slot === temp_bottom.slot) {
+            if (simultaneousBottoms[sigs[i].signature] === undefined) {
+              // If this signature has not yet been recorded, add to the object 
+              simultaneousBottoms[sigs[i].signature] = sigs[i];
+            } else if (((sigs[i].blockTime === old_top_block_time && sigs[i].slot === old_top_slot) || (sigs[i].blockTime === prev_bottom.blockTime && sigs[i].slot === temp_bottom.slot)) && simultaneousBottoms[sigs[i].signature] != undefined) {
+              // If this signature has already been recorded, record the index for splicing
+              simultaneousBottomIndexes.push(i);
+            } else {
+              // Once the above conditions are not met break, since all following txs are later/diff slot
+              break;
+            }
+          }
+        }
+
+        console.info(`[INFO] Bottom TXs / Repeated Indexes Length: ${Object.keys(simultaneousBottoms).length} / ${simultaneousBottomIndexes.length}`);
+        // Reverse the index list so its largest first
+        simultaneousBottomIndexes.reverse();
+        // Splice out the signatures that have already been recorded (largest index first so smaller indexes remain valid)
+        console.info(`[INFO] SIGS LENGTH (BEFORE): ${sigs.length}`);
+        for (var j = 0; j < simultaneousBottomIndexes.length; j += 1) {
+          // Secondary Check
+          if (simultaneousBottoms[sigs[simultaneousBottomIndexes[j]].signature] != undefined) {
+            // Splice out the simultaneous bottom txs
+            sigs.splice(simultaneousBottomIndexes[j], 1);
+          }
+        }
+        console.info(`[INFO] SIGS LENGTH (AFTER): ${sigs.length}`);
+      }
+      // Rememeber the previous bottom
+      prev_bottom = temp_bottom;
+    }
+
     // Checking if any sigs were returned
     if (!sigs || sigs.length > 0) {
       // Set top and bottom of current run
-      top = sigs[sigs.length - 1].signature;
-      bottom = sigs[0].signature;
-
+      top = {
+        signature: sigs[sigs.length - 1].signature,
+        blockTime: sigs[sigs.length - 1].blockTime,
+        slot: sigs[sigs.length - 1].slot,
+      };
+      bottom = {
+        signature: sigs[0].signature,
+        blockTime: sigs[0].blockTime,
+        slot: sigs[0].slot,
+      };
       // For first iteration
       if (firstFlag) {
         // Start process (1st iteration) - write new top
@@ -59,7 +151,7 @@ async function indexSignaturesForAddress(
 
       // infoging the bottom (oldest tx) to the top (most recent tx) of the current run
       console.info(
-        `Indexed [${sigs.length}] txs: ${sigs[0].signature} (${new Date(
+        `[INFO] Indexed [${sigs.length}] txs: ${sigs[0].signature} (${new Date(
           sigs[0].blockTime * 1000
         ).toISOString()}) - ${sigs[sigs.length - 1].signature} (${new Date(
           sigs[sigs.length - 1].blockTime * 1000
@@ -76,13 +168,17 @@ async function indexSignaturesForAddress(
 
       // Update Local Pointers
       top = bottom;
-      bottom = until;
+      bottom = {
+        signature: until,
+        blockTime: old_top_block_time,
+        slot: old_top_slot,
+      };
 
       if (!backfill_complete) {
         // Update DynamoDB Checkpoint
         writeBackfillCheckpoint(
           process.env.CHECKPOINT_TABLE_NAME,
-          top,
+          top.signature,
           undefined, // can to top or undefined both work here... (more useful for specific backfilling scenarios)
           false,
         );
@@ -90,11 +186,13 @@ async function indexSignaturesForAddress(
 
     } else {
       // No more signatures to index
-      console.warn(`Signature list is empty ${sigs}`);
+      console.warn(`[WARN] Signature list is empty ${sigs}`);
       // Regardless update new top for frontfill
       writeFrontfillCheckpoint(
         process.env.CHECKPOINT_TABLE_NAME,
-        newTop,
+        newTop.signature,
+        newTop.blockTime,
+        newTop.slot,
       );
       if (!backfill_complete) {
         // Backfill end process extra requirement - set backfill to complete
@@ -109,7 +207,7 @@ async function indexSignaturesForAddress(
     }
 
     if (sigs[0] == undefined || !sigs[sigs.length - 1] == undefined) {
-      console.error("Null signature detected");
+      console.error("[ERROR] Null signature detected");
     }
 
   } while (true);
@@ -124,19 +222,21 @@ export const refreshConnection = async () => {
 
 const main = async () => {
   if (DEBUG_MODE) {
-    console.info("Running in debug mode, will not push to AWS buckets");
+    console.info("[INFO] Running in debug mode, will not push to AWS buckets");
   }
 
   // Periodic refresh of rpc connection to prevent hangups
   setInterval(async () => {
-    console.info("%cRefreshing rpc connection", "color: cyan");
+    console.info("%c[INFO] Refreshing rpc connection", "color: cyan");
     refreshConnection();
   }, 1000 * 60 * 5); // Refresh every 5 minutes
 
   if (process.env.RESET === "true") {
-    console.info("Resetting checkpoints...");
+    console.info("[INFO] Resetting checkpoints...");
     writeFrontfillCheckpoint(
       process.env.CHECKPOINT_TABLE_NAME,
+      undefined,
+      undefined,
       undefined,
       );
     writeBackfillCheckpoint(
@@ -147,18 +247,21 @@ const main = async () => {
     );
   }
 
+  let top: ConfirmedSignatureInfoShort;
+  let bottom: ConfirmedSignatureInfoShort;
+
   // Start Indexing
   while (true) {
     // get pointers from storage
-    let { incomplete_top, bottom, backfill_complete } = await readBackfillCheckpoint(
+    let { incomplete_top, bottom_sig, backfill_complete } = await readBackfillCheckpoint(
       process.env.CHECKPOINT_TABLE_NAME
     );
-    console.info(`Incomplete Top: ${incomplete_top}, Bottom: ${bottom}, Backfill Complete: ${backfill_complete}`);
-    let top = incomplete_top;
+    console.info(`[INFO] Incomplete Top: ${incomplete_top}, Bottom: ${bottom_sig}, Backfill Complete: ${backfill_complete}`);
+
 
     if (process.env.FRONTFILL_ONLY === "true") {
       // Frontfill only mode
-      console.info("Running in frontfill only mode...");
+      console.info("[INFO] Running in frontfill only mode...");
       backfill_complete = true;
     }
 
@@ -166,41 +269,45 @@ const main = async () => {
       // Frontfill
 
       // Checking where the old 'top' was...
-      let { old_top } = await readFrontfillCheckpoint(
+      let { old_top, old_top_block_time, old_top_slot } = await readFrontfillCheckpoint(
         process.env.CHECKPOINT_TABLE_NAME
       );
 
       if (!old_top) {
         // Old top is undefined something is wrong, proceed to backfill
-        console.error("Backfilling Required, Setting Backfill to false")
-        let { incomplete_top, bottom, backfill_complete } = await readBackfillCheckpoint(
+        console.error("[ERROR] Backfilling Required, Setting Backfill to false")
+        let { incomplete_top, bottom_sig, backfill_complete } = await readBackfillCheckpoint(
           process.env.CHECKPOINT_TABLE_NAME
         );
-        writeBackfillCheckpoint( process.env.CHECKPOINT_TABLE_NAME, incomplete_top, bottom, false);
+        writeBackfillCheckpoint( process.env.CHECKPOINT_TABLE_NAME, incomplete_top, bottom_sig, false);
       } else {
           // ...and indexing from the front to the old top
-          console.info(`Frontfilling: Indexing up until: ${old_top}`);
+          console.info(`[INFO] Frontfilling: Indexing up until: ${old_top}`);
 
           ({ bottom, top } = await indexSignaturesForAddress(
             new PublicKey(process.env.PROGRAM_ID),
             undefined,
             old_top,
             backfill_complete,
+            old_top_block_time,
+            old_top_slot,
           ));
       }
     } else {
       // Backfill
-      console.info(`No prior data, proceeding to backfill. Starting at: ${incomplete_top}`);
+      console.info(`[INFO] No prior data, proceeding to backfill. Starting at: ${incomplete_top}`);
       
       ({ bottom, top } = await indexSignaturesForAddress(
         new PublicKey(process.env.PROGRAM_ID),
         incomplete_top,
-        bottom,
+        bottom_sig,
         backfill_complete,
+        undefined,
+        undefined,
       ));
     }
 
-    console.info("Indexing up to date, waiting a few seconds...");
+    console.info("[INFO] Indexing up to date, waiting a few seconds...");
     await sleep(10000); // 10 seconds
   }
 };
