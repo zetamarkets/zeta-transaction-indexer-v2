@@ -186,22 +186,26 @@ async function indexSignaturesForAddress(
 
     } else {
       // No more signatures to index
-      console.warn(`[WARN] Signature list is empty ${sigs}`);
+      console.info(`[INFO] Signature list is empty ${sigs}`);
       // Regardless update new top for frontfill
-      writeFrontfillCheckpoint(
-        process.env.CHECKPOINT_TABLE_NAME,
-        newTop.signature,
-        newTop.blockTime,
-        newTop.slot,
-      );
-      if (!backfill_complete) {
-        // Backfill end process extra requirement - set backfill to complete
-        writeBackfillCheckpoint(
+      if (!firstFlag) {
+        writeFrontfillCheckpoint(
           process.env.CHECKPOINT_TABLE_NAME,
-          undefined,
-          undefined, // can to top or undefined both work here... (more useful for specific backfilling scenarios)
-          true,
+          newTop.signature,
+          newTop.blockTime,
+          newTop.slot,
         );
+        if (!backfill_complete) {
+          // Backfill end process extra requirement - set backfill to complete
+          writeBackfillCheckpoint(
+            process.env.CHECKPOINT_TABLE_NAME,
+            undefined,
+            undefined, // can to top or undefined both work here... (more useful for specific backfilling scenarios)
+            true,
+          );
+        }
+      } else {
+        console.info('[INFO] First Flag is true AND no new sigs found, skipping write checkpoints.');
       }
       break;
     }
