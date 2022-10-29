@@ -60,6 +60,24 @@ async function indexSignaturesForAddress(
     });
     sigs.reverse();
 
+    // Retry Logic if theres an empty sig list retry c times with some sleep and backoff/wait
+    let c = 1;
+    let backoff = 1.35;
+    let sleepTime = 1000;
+    while ((!sigs || sigs.length < 1) && c < 5) {
+      console.warn(`[WARN] No signatures found, retrying in ${sleepTime}ms...`);
+      await sleep(sleepTime);
+      console.warn(`[WARN] No signatures found, retrying ${c} time(s)...`);
+      sigs = await rpc.getSignaturesForAddressWithRetries(address, {
+        before: top.signature,
+        until: bottom.signature,
+        limit: 1000,
+      });
+      sigs.reverse();
+      c += 1;
+      sleepTime *= backoff;
+    }
+
     // If we are frontfilling need to check for same blocktimed txs from the bottom
     if (sigs.length > 0 && backfill_complete) {
       // Settign temp bottom (since its possible they are removed from the list)
