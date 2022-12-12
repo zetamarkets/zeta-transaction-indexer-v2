@@ -200,7 +200,6 @@ async function indexSignaturesForAddress(
           undefined, // can to top or undefined both work here... (more useful for specific backfilling scenarios)
           false,
         );
-        console.info(`[INFO] Backfill Complete!`);
       }
 
     } else {
@@ -328,6 +327,7 @@ const main = async () => {
         undefined,
         undefined,
       ));
+      console.info(`[INFO] Backfill Complete!`);
     }
 
     console.info("[INFO] Indexing up to date, waiting a few seconds...");
