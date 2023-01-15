@@ -283,9 +283,9 @@ const main = async () => {
     console.info("[INFO] Running in debug mode, will not push to AWS buckets");
   }
 
+  // Periodically read checkpoints to confirm there are changes occuring
   let prev_backfill = undefined;
   let prev_frontfill = undefined;
-  // Periodically read checkpoints to confirm there are changes occuring
   setInterval(async () => {
     let new_backfill = await readBackfillCheckpoint(process.env.CHECKPOINT_TABLE_NAME);
     let new_frontfill = await readFrontfillCheckpoint(process.env.CHECKPOINT_TABLE_NAME);
@@ -298,7 +298,7 @@ const main = async () => {
       prev_backfill = new_backfill;
       prev_frontfill = new_frontfill;
     }
-  }, 1000 * 60 * 5); // Check every 5 minutes
+  }, 1000 * 60 * 10); // Check every 10 minutes
 
   // Periodic refresh of rpc connection to prevent hangups
   setInterval(async () => {
