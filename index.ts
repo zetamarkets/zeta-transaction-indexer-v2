@@ -311,6 +311,8 @@ const main = async () => {
       process.exit(1);
     } else {
       console.info("[INFO] Checkpoints have changed, continuing...");
+      console.info(`Backfill Checkpoint Changes: ${JSON.stringify(prev_backfill)} - ${JSON.stringify(new_backfill)}`);
+      console.info(`Frontfill Checkpoint Changes: ${JSON.stringify(prev_frontfill)} - ${JSON.stringify(new_frontfill)}`);
       prev_backfill = new_backfill;
       prev_frontfill = new_frontfill;
     }
