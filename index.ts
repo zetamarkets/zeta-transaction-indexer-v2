@@ -283,6 +283,23 @@ const main = async () => {
     console.info("[INFO] Running in debug mode, will not push to AWS buckets");
   }
 
+  let prev_backfill = undefined;
+  let prev_frontfill = undefined;
+  // Periodically read checkpoints to confirm there are changes occuring
+  setInterval(async () => {
+    let new_backfill = await readBackfillCheckpoint(process.env.CHECKPOINT_TABLE_NAME);
+    let new_frontfill = await readFrontfillCheckpoint(process.env.CHECKPOINT_TABLE_NAME);
+    if (new_backfill == prev_backfill && new_frontfill == prev_frontfill) {
+      console.info("[INFO] No change in checkpoints");
+      // Kill container task
+      process.exit(1);
+    } else {
+      console.info("[INFO] Checkpoints have changed, continuing...");
+      prev_backfill = new_backfill;
+      prev_frontfill = new_frontfill;
+    }
+  }, 1000 * 60 * 5); // Check every 5 minutes
+
   // Periodic refresh of rpc connection to prevent hangups
   setInterval(async () => {
     console.info("%c[INFO] Refreshing rpc connection", "color: cyan");
