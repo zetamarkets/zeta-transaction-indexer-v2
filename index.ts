@@ -290,7 +290,7 @@ const main = async () => {
     let new_backfill = await readBackfillCheckpoint(process.env.CHECKPOINT_TABLE_NAME);
     let new_frontfill = await readFrontfillCheckpoint(process.env.CHECKPOINT_TABLE_NAME);
     if (new_backfill == prev_backfill && new_frontfill == prev_frontfill) {
-      console.info("[INFO] No change in checkpoints");
+      console.error("[ERROR] No change in checkpoints");
       // Kill container task
       process.exit(1);
     } else {
