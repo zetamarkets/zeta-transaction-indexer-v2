@@ -284,12 +284,28 @@ const main = async () => {
   }
 
   // Periodically read checkpoints to confirm there are changes occuring
-  let prev_backfill = undefined;
-  let prev_frontfill = undefined;
+  let prev_backfill = {
+    incomplete_top: undefined,
+    bottom_sig: undefined,
+    backfill_complete: undefined
+  };
+
+  let prev_frontfill = {
+    old_top: undefined,
+    old_top_block_time: undefined,
+    old_top_slot: undefined
+  };
+
   setInterval(async () => {
     let new_backfill = await readBackfillCheckpoint(process.env.CHECKPOINT_TABLE_NAME);
     let new_frontfill = await readFrontfillCheckpoint(process.env.CHECKPOINT_TABLE_NAME);
-    if (new_backfill == prev_backfill && new_frontfill == prev_frontfill) {
+    if (
+      new_backfill.incomplete_top === prev_backfill.incomplete_top && 
+      new_backfill.bottom_sig === prev_backfill.bottom_sig &&
+      new_backfill.backfill_complete === prev_backfill.backfill_complete &&
+      new_frontfill.old_top === prev_frontfill.old_top &&
+      new_frontfill.old_top_block_time === prev_frontfill.old_top_block_time &&
+      new_frontfill.old_top_slot === prev_frontfill.old_top_slot) {
       console.error("[ERROR] No change in checkpoints");
       // Kill container task
       process.exit(1);
@@ -298,7 +314,7 @@ const main = async () => {
       prev_backfill = new_backfill;
       prev_frontfill = new_frontfill;
     }
-  }, 1000 * 60 * 10); // Check every 10 minutes
+  }, 1000 * 60 * 30); // Check every 30 minutes
 
   // Periodic refresh of rpc connection to prevent hangups
   setInterval(async () => {
