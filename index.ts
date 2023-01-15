@@ -42,6 +42,12 @@ async function indexSignaturesForAddress(
     blockTime: old_top_block_time,
     slot: old_top_slot,
   };
+  if (!backfill_complete && before === undefined && until === undefined) {
+    console.info("Not top defined in backfill, write front fill checkpoint immediately");
+    var backfill_frontfill_checkpoint_write = true;
+  } else {
+    var backfill_frontfill_checkpoint_write = false;
+  }
   let firstFlag = true;
   let newTop: ConfirmedSignatureInfoShort;
   let prev_bottom: ConfirmedSignatureInfoShort = {
@@ -64,7 +70,7 @@ async function indexSignaturesForAddress(
     let c = 1;
     let backoff = 1.35;
     let sleepTime = 1000;
-    while ((!sigs || sigs.length < 1) && c < 5) {
+    while ((sigs.length < 1) && c < 5) {
       console.warn(`[WARN] No signatures found, retrying in ${sleepTime}ms...`);
       await sleep(sleepTime);
       console.warn(`[WARN] No signatures found, retrying ${c} time(s)...`);
@@ -78,6 +84,7 @@ async function indexSignaturesForAddress(
       sleepTime *= backoff;
     }
 
+    // ======== FRONTFILL ONLY ========
     // If we are frontfilling need to check for same blocktimed txs from the bottom
     if (sigs.length > 0 && backfill_complete) {
       // Settign temp bottom (since its possible they are removed from the list)
@@ -129,7 +136,7 @@ async function indexSignaturesForAddress(
           }
         }
 
-        console.info(`[INFO] Bottom TXs / Repeated Indexes Length: ${Object.keys(simultaneousBottoms).length} / ${simultaneousBottomIndexes.length}`);
+        console.info(`[INFO] Bottom TXs / Repeated Indexes Length: ${Object.keys(simultaneousBottoms).length - 2} / ${simultaneousBottomIndexes.length}`);
         // Reverse the index list so its largest first
         simultaneousBottomIndexes.reverse();
         // Splice out the signatures that have already been recorded (largest index first so smaller indexes remain valid)
@@ -147,8 +154,9 @@ async function indexSignaturesForAddress(
       prev_bottom = temp_bottom;
     }
 
+    // ======== BOTH FRONTFILL & BACKFILL ========
     // Checking if any sigs were returned
-    if (!sigs || sigs.length > 0) {
+    if (sigs.length > 0) {
       // Set top and bottom of current run
       top = {
         signature: sigs[sigs.length - 1].signature,
@@ -175,6 +183,18 @@ async function indexSignaturesForAddress(
           sigs[sigs.length - 1].blockTime * 1000
         ).toISOString()})`
       );
+
+      // Write Frontfill checkpoint immediately after first run
+      if (backfill_frontfill_checkpoint_write) {
+        console.info(`[INFO] Writing Frontfill Checkpoint IMMEDIATELY after first backfill run`);
+        writeFrontfillCheckpoint(
+          process.env.CHECKPOINT_TABLE_NAME,
+          newTop.signature,
+          newTop.blockTime,
+          newTop.slot,
+        );
+        backfill_frontfill_checkpoint_write = false;
+      }
   
       // Push Messages to SQS
       if (!DEBUG_MODE) {
@@ -205,22 +225,38 @@ async function indexSignaturesForAddress(
     } else {
       // No more signatures to index
       console.info(`[INFO] Signature list is empty ${sigs}`);
-      // Regardless update new top for frontfill
+      // Never occurs on the first run (have to check again if there are 0 sigs on subsequent run to confirm)
       if (!firstFlag) {
-        writeFrontfillCheckpoint(
-          process.env.CHECKPOINT_TABLE_NAME,
-          newTop.signature,
-          newTop.blockTime,
-          newTop.slot,
-        );
-        if (!backfill_complete) {
-          // Backfill end process extra requirement - set backfill to complete
+        // Only writes frontfill checkpoint at the end in a front fill scenario
+        if (backfill_complete) {
+          writeFrontfillCheckpoint(
+            process.env.CHECKPOINT_TABLE_NAME,
+            newTop.signature,
+            newTop.blockTime,
+            newTop.slot,
+          );
+        } else {
+          // Mark backfill as complete (true) (old top should be written on first run of backfill)
           writeBackfillCheckpoint(
             process.env.CHECKPOINT_TABLE_NAME,
             undefined,
             undefined, // can to top or undefined both work here... (more useful for specific backfilling scenarios)
             true,
           );
+
+          // Write Frontfill Checkpoint IF ts undefined for some reason (cases where defined backfill is run without ff checkpoint existing)
+          let { old_top, old_top_block_time, old_top_slot } = await readFrontfillCheckpoint(
+            process.env.CHECKPOINT_TABLE_NAME
+          );
+          if (old_top == undefined) {
+            console.log("[INFO] Writing FF checkpoint after backfill complete since none was found...")
+            writeFrontfillCheckpoint(
+              process.env.CHECKPOINT_TABLE_NAME,
+              newTop.signature,
+              newTop.blockTime,
+              newTop.slot,
+            );
+          }
         }
       } else {
         console.info('[INFO] First Flag is true AND no new sigs found, skipping write checkpoints.');
